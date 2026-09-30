@@ -28,7 +28,7 @@ flowchart LR
   - **It is the only role that talks to the human.**
 - **`q-planner`** (Opus). Writes `spec.md`, `plan.md`, `impl-plan.md` and `draft-pr.md`, plus its responses in review files. It also sets up branches.
 - **`q-reviewer`** (Opus). Writes review files in `review/`. It **never writes code**.
-- **`q-coder`** (Sonnet 4.6). Writes code in the repo, makes local commits, keeps `impl-notes.md`, and adds its responses to review files.
+- **`q-coder`** (Sonnet 5, EU profile). In a multi-repo task, q-impl runs one coder per repo. Writes code in the repo, makes local commits, keeps `impl-notes.md`, and adds its responses to review files.
 
 Sub-agents raise questions for the human through a `NEEDS_HUMAN:` line in their report.
 
@@ -48,7 +48,8 @@ tasks/<slug>/
   review/
     plan-r<N>.md    # reviewer's plan review for round N, then "## Planner response"
     impl-r<N>.md    # reviewer's implementation-plan review, then "## Planner response"
-    code-r<N>.md    # /code-review findings + reviewer's code review, then "## Coder response"
+    code-r<N>.md    # reviewer's code review (round 1 merges verified /code-review findings), then "## Coder response"
+    code-r1-codereview.md  # raw /code-review (+ security-review) output, round 1 only
     pr-<n>-triage.md, pr-<n>-recheck.md
   impl-notes.md     # coder: deviations, commands run and results, commits
   draft-pr.md       # PR title and body, waiting for gate 3
@@ -80,11 +81,12 @@ worktree: none         # or an absolute path
 - **Max rounds:**
   - plan: 3
   - impl-plan: 2 (1 for small tasks)
-  - code: 3
+  - code: 2, plus a 3rd only if a blocker is still open. Round 1 is a full review; round 2+ re-checks only the open findings and the fix diff
   - pr-resolve: 1, with one extra round only on a blocker
 - **Agreement:** the verdict is `APPROVED`. The reviewer may approve with minor or nit findings still open. The author fixes or explicitly waives them.
 - **Rebuttal:** the author may reject a finding only with evidence: a `path:line`, a doc, or a concrete input or trace. Plain "I disagree" doesn't count.
 - **Fresh reviewer:** a **new** `q-reviewer` instance for every round. It reads the previous round's file to check what was resolved.
+- **Minors don't cost a round:** on `APPROVED` with open minors or nits, the author fixes or waives them once, with no re-review.
 - **Same author:** the same planner or coder instance is continued via `SendMessage` across rounds. If it's gone (for example, in a new session), spawn a new one and point it at the files.
 
 ### Escalate to the human when
@@ -190,7 +192,10 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
   - yama: `make run-fixes && make run-checks`
   - webapp: `npm run lint:fix && npm run format:fix && npm run ci`
   - hyperion: `uv run ruff format . && uv run ruff check --fix . && uv run mypy`
-- **Order:** fixes first, then checks, then the relevant tests. Repeat until everything is green.
+- **Runbook:** `~/Documents/z-agent/worker/docs/repos/<alias>.md` holds the verified commands and gotchas per repo. Read it first; add a line when you learn something new.
+- **Two speeds:**
+  - *While iterating:* targeted checks only: the typecheck, and the tests for the files you touched.
+  - *Before each commit:* the full gate. Order: fixes first, then checks, then the relevant tests. Repeat until everything is green. A commit that only fixes minor or nit findings, with no logic change, may use the targeted checks alone.
 - **Never game the checks:**
   - don't weaken a check
   - don't add a suppression

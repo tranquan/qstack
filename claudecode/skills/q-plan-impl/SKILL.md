@@ -40,6 +40,6 @@ The gates in this flow are gate 1 (plan) and gate 3 (push + PR). The implementat
 ## 2. Push + PR (after gate 3 approval)
 
 1. Planner job `pr-open`. It runs the RULES.md §5 pre-push checks (only this task's commits, merge `origin/main` if behind and re-check), pushes with `-u`, and creates or updates the PR.
-2. If the pre-push checks needed a merge that changed code, run one q-impl review round on the merge result before pushing.
+2. If the pre-push checks needed a merge that changed code, run one q-impl delta re-check round (reviewed `<sha>` = the pre-merge `HEAD`) on the merge result before pushing.
 3. Set `phase: pr-open`. Add the PR to `index.md` **Links**, and update the log and the README row.
 4. Report the PR URL, plus: "When reviewers comment, run `/q-pr-resolve <PR>`."

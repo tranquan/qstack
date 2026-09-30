@@ -30,37 +30,43 @@ Input: `$ARGUMENTS`
 
 ## 1. Implement
 
-Set `phase: impl`. Spawn **q-coder** (`Agent(subagent_type: "q-coder")`; add `model: "opus"` if the input has `--opus`). Prompt:
-- the task folder
-- job `implement`
-- the commit attribution line from your system context
+Set `phase: impl`. Spawn **q-coder** (`Agent(subagent_type: "q-coder")`; add `model: "opus"` if the input has `--opus`).
 
-Keep its agent id for `SendMessage`.
+- **One coder per repo.** If `impl-plan.md` has more than one `## <repo>` section, spawn a fresh coder for each section, in the `## Order` the plan gives. Wait for one to finish before starting the next. A small context per coder keeps each turn fast. The next coder picks up what the previous one produced from the files the plan names (for example a generated client diff).
+- Prompt each coder with:
+  - the task folder
+  - job `implement`, scoped to `## <repo>` (omit the scope for single-repo tasks)
+  - the commit attribution line from your system context
+- Keep each agent id, mapped to its repo, for `SendMessage`.
+- When a coder finishes, tell the human in one line: the repo, the commits, and the checks.
 
+Handling reports:
 - Report `blocked`, or `NEEDS_HUMAN` → escalate (RULES.md §3) and stop.
 - Report shows failing checks → send it back once. If it's still failing, escalate.
 
-## 2. Review loop (max 3 rounds)
+## 2. Review loop (max 2 rounds; a 3rd only if a blocker is still open)
 
-Set `phase: impl-review`. For round N = 1..3:
+Set `phase: impl-review`. Before each round, record `HEAD` of each repo (the reviewed `<sha>`).
 
-1. **Run the code-review skill.** In the recorded checkout or worktree, run the **`code-review`** skill at `high` against the task branch.
-   - Save its findings to `review/code-r<N>-codereview.md`.
-   - If plan §1 flags risks or security (auth, tenant data, secrets, external input), also run **`security-review`**, and append its output to the same file.
-2. **Spawn a fresh q-reviewer** with:
-   - the task folder
-   - mode `code`
-   - round N
-   - the `/code-review` findings file, so it can verify them
-   - the output file `review/code-r<N>.md`
-   - the previous round's file, if N > 1
+### Round 1: full review, in parallel
 
-   The reviewer writes the review file itself. Read the verdict from its report.
-3. **`APPROVED`** → stop the loop.
-4. **`ESCALATE`**, or a blocking `NEEDS_HUMAN` → escalate and stop.
-5. **`NOT APPROVED`** → `SendMessage` to the coder: job `fix-findings`, file `review/code-r<N>.md`. Wait for its report.
+1. In one message, start both:
+   - **A fresh q-reviewer**, in the background, with: the task folder, mode `code`, round 1, the output file `review/code-r1.md`, and "`/code-review` runs in parallel; wait for its findings after your own review".
+   - **The `code-review` skill** at `high` against the task branch, in each recorded checkout or worktree. Save its findings to `review/code-r1-codereview.md`. If plan §1 flags risks or security (auth, tenant data, secrets, external input), also run **`security-review`**, and append its output to the same file.
+2. When both are done, `SendMessage` the reviewer: "verify `review/code-r1-codereview.md` and merge the real findings into `review/code-r1.md`". Read the verdict from its report.
 
-If round 3 ends with blockers or majors still open → escalate.
+### Round 2 and later: delta re-check
+
+Spawn a fresh q-reviewer with: the task folder, mode `code`, round N, "delta re-check", the previous round's file, the reviewed `<sha>` per repo from the previous round, and the output file `review/code-r<N>.md`. **Don't run `code-review` again.**
+
+### After each round
+
+- **`APPROVED`** with no open minors → stop the loop.
+- **`APPROVED`** with open minors or nits → `SendMessage` the owning coder(s): job `fix-findings`, file `review/code-r<N>.md`, "minors only, fix or waive". **No re-review.** Stop the loop.
+- **`ESCALATE`**, or a blocking `NEEDS_HUMAN` → escalate and stop.
+- **`NOT APPROVED`** → `SendMessage` the coder that owns the files for each finding: job `fix-findings`, file `review/code-r<N>.md`. If that coder is gone, spawn a fresh one scoped to that repo. Wait for the reports, then run the next round.
+
+If round 2 ends with majors still open, or round 3 ends with a blocker still open → escalate.
 
 ## 3. Done
 

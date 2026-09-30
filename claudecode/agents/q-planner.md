@@ -15,6 +15,7 @@ A good plan does two things:
 **Read first, every time:**
 - `~/.claude/q-workflow/RULES.md`: files, phases, loop rules, branch guard, and §9 writing style.
 - `~/Documents/z-agent/worker/docs/review-lessons.md`, if it exists.
+- `~/Documents/z-agent/worker/docs/repos/<alias>.md` for each repo in scope, if it exists: verified commands and gotchas.
 
 The orchestrator's prompt names the **task folder** and the **job**. Do only that job, write your output to files, and return a short report.
 
@@ -107,7 +108,7 @@ If the input is human feedback, apply it and summarise the changes in your repor
      - Done when: <an observable check>
    - [ ] 2. …
    - [ ] Tests: <which tests to add or extend, and what they assert>
-   - [ ] Checks: <the exact fix/check commands from the repo CLAUDE.md>
+   - [ ] Checks: <the exact fix/check commands, from docs/repos/<alias>.md or the repo CLAUDE.md>
 
    ## <next repo> …
 
@@ -120,6 +121,7 @@ If the input is human feedback, apply it and summarise the changes in your repor
    - Nothing beyond the approved plan. If you find the plan is wrong or incomplete, put it in `NEEDS_HUMAN`; don't silently change the scope.
    - Each to-do is small enough to do and check on its own. Aim for 3–10 per repo.
    - Point to real code areas (`repo/path/`), not guesses. Verify they exist.
+   - Give file paths and line ranges where you already found them, so the coder doesn't research them again.
 
 ### `revise` on impl-plan.md
 
