@@ -26,9 +26,9 @@ flowchart LR
   - Spawns agents and passes files between them.
   - Records approvals and updates `index.md`.
   - **It is the only role that talks to the human.**
-- **`q-planner`** (Opus). Writes `spec.md`, `plan.md`, `impl-plan.md` and `draft-pr.md`, plus its responses in review files. It also sets up branches.
-- **`q-reviewer`** (Opus). Writes review files in `review/`. It **never writes code**.
-- **`q-coder`** (Sonnet 5, EU profile). In a multi-repo task, q-impl runs one coder per repo. Writes code in the repo, makes local commits, keeps `impl-notes.md`, and adds its responses to review files.
+- **`q-planner`** (Sonnet 5.5, EU profile). Writes `spec.md`, `plan.md`, `impl-plan.md` and `draft-pr.md`, plus its responses in review files. It also sets up branches.
+- **`q-reviewer`** (Sonnet 5.5, EU profile). Writes review files in `review/`. It **never writes code**.
+- **`q-coder`** (Sonnet 5.5, EU profile). In a multi-repo task, q-impl runs one coder per repo. Writes code in the repo, makes local commits, keeps `impl-notes.md`, and adds its responses to review files.
 
 Sub-agents raise questions for the human through a `NEEDS_HUMAN:` line in their report.
 
@@ -39,7 +39,8 @@ Sub-agents raise questions for the human through a `NEEDS_HUMAN:` line in their 
 
 ```
 tasks/<slug>/
-  index.md          # frontmatter adds: phase, repo, branch, worktree
+  index.md          # frontmatter adds: phase, repo, branch, worktree, log
+  comms.md          # append-only log of messages between agents (skipped when `log: off`, see §10)
   spec.md           # short spec (planner)
   plan.md           # §1 high-level · §2 details (optional) · §3 other options
                     # line 2: `approved: no` → `approved: <YYYY-MM-DD> by human` after gate 1
@@ -62,6 +63,7 @@ phase: planning        # see Phases below
 repo: yama             # project alias from the global CLAUDE.md; a list if multi-repo
 branch: feature/<slug> # or `none` before the branch is set up
 worktree: none         # or an absolute path
+log: on                # `off` when the user asked to skip the comms log (§10)
 ```
 
 ### Phases
@@ -79,12 +81,16 @@ worktree: none         # or an absolute path
 ## 3. Review loop rules
 
 - **Max rounds:**
-  - plan: 3
-  - impl-plan: 2 (1 for small tasks)
+  - plan: 1 by default; a 2nd (delta) round only if a blocker is still open after the revision
+  - impl-plan: 1 by default; a 2nd (delta) round only if a blocker or major is still open. Small tasks: always 1
   - code: 2, plus a 3rd only if a blocker is still open. Round 1 is a full review; round 2+ re-checks only the open findings and the fix diff
   - pr-resolve: 1, with one extra round only on a blocker
 - **Agreement:** the verdict is `APPROVED`. The reviewer may approve with minor or nit findings still open. The author fixes or explicitly waives them.
 - **Rebuttal:** the author may reject a finding only with evidence: a `path:line`, a doc, or a concrete input or trace. Plain "I disagree" doesn't count.
+- **Delta rounds:** round 2 and later, in every mode, re-check only the open findings and the revision diff. Report only blockers and majors. Don't re-review the whole document.
+- **Severity must be earned:** `blocker` and `major` need a concrete trace, input or `path:line`. Without one, the finding is `minor`. Only blockers and majors cost another round.
+- **Findings cap:** at most 7 findings per review, most severe first. Fold related nits into one finding, or drop them.
+- **Human feedback at gate 1:** re-run the reviewer only if the feedback changes the approach, the scope or the acceptance criteria. Wording or detail changes go to the planner alone.
 - **Fresh reviewer:** a **new** `q-reviewer` instance for every round. It reads the previous round's file to check what was resolved.
 - **Minors don't cost a round:** on `APPROVED` with open minors or nits, the author fixes or waives them once, with no re-review.
 - **Same author:** the same planner or coder instance is continued via `SendMessage` across rounds. If it's gone (for example, in a new session), spawn a new one and point it at the files.
@@ -222,3 +228,19 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
 - **Mermaid diagrams** for workflows or flows that cross services or have several steps. Keep them small.
 - **References:** point to code as `repo/path:L123`, and use absolute dates (`YYYY-MM-DD`).
 - **Keep it short.** Research deeply but write briefly. Leave the research trail out of the documents.
+
+## 10. Comms log (default on)
+
+- **What:** `tasks/<slug>/comms.md` records the messages agents pass to each other, so the human can follow the conversation later. The review files in `review/` stay as they are; they are the working hand-off, and the log points to them.
+- **Default is on.** The user turns it off by saying so explicitly in the request ("no log", "skip the log", "without logging"). The orchestrator then sets `log: off` in `index.md`, so the choice survives a resume, and tells each sub-agent `log: off` in its prompt. A later request can set it back to `on`.
+- **When off:** nobody writes or edits `comms.md`. Everything else works the same.
+- **Who writes:** every role appends one entry for each message it sends, using Bash `>>` (append only, never rewrite the file):
+  - the orchestrator: the job prompts it gives a sub-agent, and the human feedback it relays
+  - `q-planner`, `q-reviewer`, `q-coder`: their final report
+- **Entry format:**
+
+  ```
+  ### <YYYY-MM-DD HH:MM> · <from> → <to> · <job or mode> · round <N>
+  <2–6 bullets: what was asked, or the verdict and the main points. Link the full text, for example `review/plan-r1.md`.>
+  ```
+- Keep entries short. Link the review file; don't paste it.

@@ -14,6 +14,8 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first. This s
 
 Input: `$ARGUMENTS`
 
+**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+
 ## Flow: resume by `phase` in the task's `index.md`
 
 | phase | Do |

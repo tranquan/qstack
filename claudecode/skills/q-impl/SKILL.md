@@ -14,6 +14,8 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first.
 
 Input: `$ARGUMENTS`
 
+**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+
 ## 0. Preconditions (all must hold)
 
 1. Resolve the task: a slug in `~/Documents/z-agent/worker/tasks/`. If none is given, infer it from `tasks/README.md` or from the current branch matching an `index.md` `branch:`. If that's ambiguous, ask.

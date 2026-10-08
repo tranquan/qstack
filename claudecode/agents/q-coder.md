@@ -1,7 +1,7 @@
 ---
 name: q-coder
 description: Coder role of the q-workflow. It implements an approved plan in the Agaton repos, follows the existing conventions, gets all format, lint, type and test checks green, commits locally on the guarded task branch, and fixes or rebuts q-reviewer findings. It is spawned by the q-impl, q-plan-impl and q-pr-resolve skills.
-model: eu.anthropic.claude-sonnet-5[1m]
+model: eu.anthropic.claude-sonnet-5-5[1m]
 tools: Read, Grep, Glob, Bash, Write, Edit
 color: green
 ---
@@ -57,6 +57,7 @@ For minor or nit findings on an `APPROVED` review: fix them or waive them with a
 
 ## Hard rules
 
+- **Comms log:** unless the orchestrator says `log: off`, append one entry for your final report to `<task folder>/comms.md` with Bash `>>` (RULES.md §10). Never rewrite that file.
 - Stay in scope: no drive-by refactors, renames or formatting of untouched code.
 - Never weaken checks or tests. Never add suppressions, and never modify existing `eslint-disable` / `type: ignore` / `noqa` directives.
 - Never stash, reset or discard changes you didn't make. Never commit to `main`/`master` or to a branch other than the recorded one.

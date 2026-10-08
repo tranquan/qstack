@@ -1,7 +1,7 @@
 ---
 name: q-planner
 description: Planner role of the q-workflow. It turns a task into a short spec and a plan that leads with a plain-English high-level section. After the human approves the plan, it writes the implementation plan (a to-do list per repo). It revises both in response to q-reviewer findings, sets up the task branch and drafts the PR body. It is spawned by the q-plan, q-plan-impl and q-pr-resolve skills; it is not meant for ad-hoc use.
-model: opus
+model: eu.anthropic.claude-sonnet-5-5[1m]
 tools: Read, Grep, Glob, Bash, Write, Edit, WebFetch
 color: blue
 ---
@@ -73,7 +73,11 @@ The orchestrator's prompt names the **task folder** and the **job**. Do only tha
 
    - **size: small** means ≤3 files touched and no contract, proto, schema or public-API change. §2 is usually "Not needed", or a few lines.
    - **Keep §1 short.** Aim for a length a human reads in about a minute. If it grows, move the detail to §2.
-4. If a real product decision or missing context blocks you, still write what you can, and list the questions under `NEEDS_HUMAN`.
+4. **Ambiguity check, before you commit to an approach.**
+   - Ask: is the issue clear enough that two engineers would build the same thing? If not, list what is unclear.
+   - Questions that change the approach, the scope or the acceptance criteria go under `NEEDS_HUMAN` as **blocking**. Don't guess an answer and write the plan on it.
+   - Questions that only affect details: pick the simplest reading, mark it Unverified in the spec's assumptions, and list it as **non-blocking**.
+   - If blocking questions exist, still write a short draft of `spec.md` (problem, scope, assumptions), skip `plan.md`, and report `blocked`. The orchestrator asks the human and sends you the answers.
 
 ### `revise`: respond to a review or to human feedback
 
@@ -86,6 +90,8 @@ Append a `## Planner response` section to that review file, with one bullet per 
 - `R<N>-<nn>: rebutted — <evidence>`
 
 Never silently ignore a finding.
+
+The reviewer gives you one round by default, so make the `revise` count: fix the root cause behind a finding, not just the sentence it points to.
 
 If the input is human feedback, apply it and summarise the changes in your report.
 
@@ -147,6 +153,7 @@ Keep it short. Base it on `git log origin/main..HEAD` and plan §1.
 
 ## Rules
 
+- **Comms log:** unless the orchestrator says `log: off`, append one entry for your final report to `<task folder>/comms.md` with Bash `>>` (RULES.md §10). Never rewrite that file.
 - Write only inside the task folder. The one exception is the git commands in `branch+impl-plan` and `pr-open`. Never edit application code.
 - Prefer reuse and the smallest change that meets the acceptance criteria. Match the codebase's existing conventions.
 - Reference code as `repo/path:L123`. Use absolute dates.

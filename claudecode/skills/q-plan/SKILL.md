@@ -3,12 +3,13 @@ name: q-plan
 description: >-
   Plan a task with the q-workflow. q-planner writes a short spec and a plan
   (high-level first, then optional detail, then other options), and q-reviewer
-  reviews it broadly: cross-service fit, architecture, security and edge cases.
-  They iterate until the reviewer approves, then it stops for human approval.
-  After approval, the planner writes the implementation plan (a to-do list per
-  repo) and the reviewer checks it, until they agree. Triggers on: "q-plan", "plan this task
+  reviews the approach once: does it solve the right problem, and does it fit
+  the architecture and other services. A second round runs only for an open
+  blocker. Then it stops for human approval. After approval, the planner writes
+  the implementation plan (a to-do list per repo) and the reviewer checks it
+  (1 round, a 2nd only for an open blocker or major). Triggers on: "q-plan", "plan this task
   with review", "planner and reviewer".
-argument-hint: <task text | GitHub issue URL | worker task slug> [approve]
+argument-hint: <task text | GitHub issue URL | worker task slug> [approve] [no log]
 ---
 
 # q-plan: planner ⇄ reviewer, up to human approval
@@ -17,16 +18,18 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first. It def
 
 Input: `$ARGUMENTS`
 
+**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+
 ```mermaid
 flowchart LR
     T[Task] --> P[q-planner<br/>spec.md + plan.md]
     P --> R[q-reviewer<br/>review/plan-rN.md]
-    R -->|NOT APPROVED, max 3 rounds| P
+    R -->|NOT APPROVED, blocker open: 1 delta round| P
     R -->|APPROVED| G([Gate 1: human])
     R -.->|ESCALATE| H([Human decision])
     G -->|approve| IP[q-planner<br/>branch + impl-plan.md]
     IP --> IR[q-reviewer<br/>review/impl-rN.md]
-    IR -->|NOT APPROVED, max 2 rounds| IP
+    IR -->|blocker/major open: 1 delta round| IP
     IR -->|APPROVED| Ready[phase: ready<br/>human may read impl-plan.md]
 ```
 
@@ -38,7 +41,7 @@ flowchart LR
 2. **No task found?** Create one following `~/Documents/z-agent/worker/.claude/skills/new-task/SKILL.md`. Ask for, or create, a GitHub issue as that skill says.
 3. **Prepare `index.md`.**
    - Read it.
-   - Add the `phase` / `repo` / `branch` / `worktree` fields if they're missing, starting with `phase: planning`.
+   - Add the `phase` / `repo` / `branch` / `worktree` / `log` fields if they're missing, starting with `phase: planning`.
    - Make sure the `review/` folder exists.
 4. **Resume by phase:**
    - `planning`, or a new task → go to §1.
@@ -49,15 +52,15 @@ flowchart LR
    - `impl-planning` → go to §3, step 2. If `impl-plan.md` already exists, continue the review loop from the next round.
    - `ready` or later → tell the user the plans are already agreed, link `impl-plan.md`, and say the next step is `/q-impl <slug>`.
 
-## 1. Plan loop (max 3 rounds)
+## 1. Plan review (1 round; a 2nd only for an open blocker)
 
 1. **Spawn the planner.**
    - Call `Agent(subagent_type: "q-planner")`. Prompt: the task folder, the job (`spec+plan`), and the raw task input.
    - Keep its agent id for `SendMessage`. If that tool isn't loaded, load it with `ToolSearch select:SendMessage`.
-2. **Handle `NEEDS_HUMAN`.**
-   - Questions that block the planning → ask the user, then pass the answers on to the planner.
-   - Questions that don't block it → save them for the gate summary.
-3. **Review rounds.** For round N = 1..3:
+2. **Handle `NEEDS_HUMAN` before any review.**
+   - Blocking questions (they change the approach, scope or acceptance criteria) → ask the user now, then pass the answers to the planner and have it finish `plan.md`. Don't send a plan built on guesses to the reviewer.
+   - Non-blocking questions → save them for the gate summary.
+3. **Review.** Round 1 is the full approach review. The reviewer focuses on whether the plan solves the right problem. Round 2 runs only after a `NOT APPROVED` with a blocker, and it's a delta. For round N = 1..2:
    1. Spawn a **fresh q-reviewer** with:
       - the task folder
       - mode `plan`
@@ -67,12 +70,13 @@ flowchart LR
 
       The reviewer writes the file itself.
    2. Read the verdict from the reviewer's report. Check that the file exists.
-   3. **`APPROVED`** → stop the loop and go to §2.
+   3. **`APPROVED`** → if minors or nits are open, send them to the planner in one `revise` (file `review/plan-r<N>.md`) with no re-review. Then go to §2.
    4. **`ESCALATE`**, or a blocking `NEEDS_HUMAN` → go to §4.
 
       If only some findings are escalated, you may still send the rest to the planner (step 5) before you escalate.
    5. **`NOT APPROVED`** → `SendMessage` to the same planner: job `revise`, file `review/plan-r<N>.md`. Wait for its report.
-4. **Round cap.** After round 3, if blocker or major findings are still open → go to §4.
+      - After round 1, run round 2 only if a blocker was open. Otherwise treat the revision as done and go to §2.
+4. **Round cap.** After round 2, if a blocker is still open → go to §4.
 
 ## 2. Gate 1: human review
 
@@ -84,6 +88,7 @@ Set `phase: gate-1` and update the `index.md` log. Show the user a short summary
 - **Risks and security:** at most 3 bullets.
 - **Review:**
   - how many rounds it took, and the final verdict
+  - whether the reviewer confirmed the plan solves the issue's real problem
   - what the review changed: one line per important finding, plus rebuttals and the reason for each
 - **Open questions:** anything still undecided.
 - **Files:** links to `plan.md`, `spec.md` and `review/`.
@@ -93,23 +98,23 @@ Set `phase: gate-1` and update the `index.md` log. Show the user a short summary
 
 **If the user sends feedback:**
 1. `SendMessage` it to the planner (job `revise`, with the feedback as input).
-2. Run one reviewer round on the result.
+2. Run one reviewer round (a delta) **only if** the feedback changes the approach, the scope or the acceptance criteria. For wording or detail changes, skip the reviewer.
 3. Show gate 1 again.
 
 ## 3. After gate 1 approval: implementation plan loop
 
 1. Replace `approved: no` in `plan.md` with `approved: <YYYY-MM-DD> by human`. Set `phase: impl-planning`.
 2. **Write the implementation plan.** Run the planner job `branch+impl-plan`. Continue the same planner via `SendMessage`, or spawn a new one if it's gone. It sets up the branch or branches and writes `impl-plan.md`.
-3. **Review rounds.** For round N = 1..2 (only 1 round if `size: small`):
+3. **Review rounds.** Round 1 is the default. Run round 2 (a delta) only if a blocker or major is still open after the planner's revision, and never for `size: small`. For round N = 1..2:
    1. Spawn a **fresh q-reviewer** with:
       - mode `impl-plan`
       - round N
       - the output file `review/impl-r<N>.md`
       - the previous round's file, if N > 1
-   2. **`APPROVED`** → stop the loop.
+   2. **`APPROVED`** → stop the loop. Send open minors to the planner in one `revise`, with no re-review.
    3. **`ESCALATE`**, or a blocking `NEEDS_HUMAN` → go to §4. This usually means the to-do list exposed a problem in the approved plan.
-   4. **`NOT APPROVED`** → `SendMessage` to the planner: job `revise` on `review/impl-r<N>.md`.
-4. **Round cap.** After the last round, if blocker or major findings are still open → go to §4.
+   4. **`NOT APPROVED`** → `SendMessage` to the planner: job `revise` on `review/impl-r<N>.md`. Then run round 2 only if the rules above allow it; otherwise mark it agreed.
+4. **Round cap.** After the last round (2, or 1 for small tasks), if a blocker is still open → go to §4. Open majors after the last round go in the report to the human, not into another loop.
 5. **Mark it agreed.**
    - Set `status: agreed <YYYY-MM-DD> (review/impl-r<N>.md)` in `impl-plan.md`.
    - Set `phase: ready`, and update `index.md` and the README row.
