@@ -17,7 +17,7 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first (§5 br
 
 Input: `$ARGUMENTS`
 
-**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+**AI log:** follow RULES.md §10 (`ailog.md`, on unless the input or `index.md` says `log: off`). Without a linked task, there is no log.
 
 ## 1. Fetch
 
@@ -89,4 +89,4 @@ Run the RULES.md §5 pre-push checks, then `git push`. That's the same authoriza
 **Checks:** <commands → pass>. Pushed: yes/no.
 ```
 
-If a task is linked, update its `index.md` log. If a `fix` item was something the q-flow should have caught before the PR (a bot or human found a real bug), append a one-line lesson to `~/Documents/z-agent/worker/docs/review-lessons.md`.
+If a task is linked, update its `index.md` Log. If a `fix` item was something the q-flow should have caught before the PR (a bot or human found a real bug), add one lesson per RULES.md §8: a cross-repo rule goes to `review-lessons.md` (tier 1, keep it at or under 15 lines), a repo-specific one to `## Conventions` in `docs/repos/<alias>.md` (tier 2).

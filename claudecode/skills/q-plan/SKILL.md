@@ -18,11 +18,11 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first. It def
 
 Input: `$ARGUMENTS`
 
-**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+**AI log:** follow RULES.md §10 (`ailog.md`, on unless the input or `index.md` says `log: off`).
 
 ```mermaid
 flowchart LR
-    T[Task] --> P[q-planner<br/>spec.md + plan.md]
+    T[Task] --> P[q-planner<br/>plan.md: spec + plan]
     P --> R[q-reviewer<br/>review/plan-rN.md]
     R -->|NOT APPROVED, blocker open: 1 delta round| P
     R -->|APPROVED| G([Gate 1: human])
@@ -42,6 +42,8 @@ flowchart LR
 3. **Prepare `index.md`.**
    - Read it.
    - Add the `phase` / `repo` / `branch` / `worktree` / `log` fields if they're missing, starting with `phase: planning`.
+   - Bring it to the fixed sections in RULES.md §2 (Task, Expected outcome, Context, Progress, Decisions, Links, Log). Move anything that doesn't fit into `context.md` and link it. Don't lose content.
+   - If a hand-written `plan.md` or notes exist, tell the planner so it builds on them (it must not overwrite them blindly).
    - Make sure the `review/` folder exists.
 4. **Resume by phase:**
    - `planning`, or a new task → go to §1.
@@ -91,7 +93,7 @@ Set `phase: gate-1` and update the `index.md` log. Show the user a short summary
   - whether the reviewer confirmed the plan solves the issue's real problem
   - what the review changed: one line per important finding, plus rebuttals and the reason for each
 - **Open questions:** anything still undecided.
-- **Files:** links to `plan.md`, `spec.md` and `review/`.
+- **Files:** links to `plan.md` and `review/`.
 - The instruction: *"Reply **approve** (or `/q-plan <slug> approve`), or give feedback."*
 
 **Stop and wait.**
@@ -137,4 +139,4 @@ Set `phase: gate-1` and update the `index.md` log. Show the user a short summary
 
 - **Sub-agents run in the background.** Wait for their completion notification; don't poll.
 - **Never paste full plans or reviews into chat.** Summarise and link. Follow the RULES.md §9 writing style.
-- **Before ending the turn at any gate,** update `index.md` (`updated`, Now/Next, Log) and the `tasks/README.md` row.
+- **Before ending the turn at any gate,** update `index.md` (`updated`, Progress, Decisions, Log) and the `tasks/README.md` row.

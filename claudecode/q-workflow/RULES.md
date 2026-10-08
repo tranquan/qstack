@@ -26,9 +26,11 @@ flowchart LR
   - Spawns agents and passes files between them.
   - Records approvals and updates `index.md`.
   - **It is the only role that talks to the human.**
-- **`q-planner`** (Sonnet 5.5, EU profile). Writes `spec.md`, `plan.md`, `impl-plan.md` and `draft-pr.md`, plus its responses in review files. It also sets up branches.
-- **`q-reviewer`** (Sonnet 5.5, EU profile). Writes review files in `review/`. It **never writes code**.
-- **`q-coder`** (Sonnet 5.5, EU profile). In a multi-repo task, q-impl runs one coder per repo. Writes code in the repo, makes local commits, keeps `impl-notes.md`, and adds its responses to review files.
+- **`q-planner`.** Writes `plan.md` (spec included), `impl-plan.md` and `draft-pr.md`, plus its responses in review files. It also sets up branches.
+- **`q-reviewer`.** Writes review files in `review/`. It **never writes code**.
+- **`q-coder`.** In a multi-repo task, q-impl runs one coder per repo. Writes code in the repo, makes local commits, keeps the `## Notes` section of `impl-plan.md`, and adds its responses to review files.
+
+The model for each role is pinned in its agent file's frontmatter, and nowhere else.
 
 Sub-agents raise questions for the human through a `NEEDS_HUMAN:` line in their report.
 
@@ -37,24 +39,44 @@ Sub-agents raise questions for the human through a `NEEDS_HUMAN:` line in their 
 - **Worker root:** `~/Documents/z-agent/worker`. The workspace conventions are in its `AGENT.md`/`CLAUDE.md`.
 - **Task folder:** every q-flow belongs to `tasks/<slug>/`.
 
+Every task has the same five files plus `review/`. Anything else is a linked extra.
+
 ```
 tasks/<slug>/
-  index.md          # frontmatter adds: phase, repo, branch, worktree, log
-  comms.md          # append-only log of messages between agents (skipped when `log: off`, see §10)
-  spec.md           # short spec (planner)
-  plan.md           # §1 high-level · §2 details (optional) · §3 other options
+  index.md          # the entry point: fixed sections, see below. Frontmatter adds: phase, repo, branch, worktree, log
+  ailog.md          # append-only log of messages between agents (skipped when `log: off`, see §10)
+  plan.md           # §0 spec · §1 high-level · §2 details (optional) · §3 other options
                     # line 2: `approved: no` → `approved: <YYYY-MM-DD> by human` after gate 1
-  impl-plan.md      # implementation plan: to-do list per repo, written AFTER gate 1
+  impl-plan.md      # to-do list per repo, written AFTER gate 1, plus the coder's `## Notes` at the end
                     # line 2: `status: draft` → `status: agreed <YYYY-MM-DD> (review/impl-r<N>.md)`
+  draft-pr.md       # PR title and body, waiting for gate 3
+  context.md        # optional: long material (thread, issue body, root-cause write-up). Linked from index.md
   review/
     plan-r<N>.md    # reviewer's plan review for round N, then "## Planner response"
     impl-r<N>.md    # reviewer's implementation-plan review, then "## Planner response"
     code-r<N>.md    # reviewer's code review (round 1 merges verified /code-review findings), then "## Coder response"
     code-r1-codereview.md  # raw /code-review (+ security-review) output, round 1 only
     pr-<n>-triage.md, pr-<n>-recheck.md
-  impl-notes.md     # coder: deviations, commands run and results, commits
-  draft-pr.md       # PR title and body, waiting for gate 3
 ```
+
+Other write-ups (for example a root-cause analysis) may be their own file, listed in the index's **Links** table.
+
+### index.md: fixed sections
+
+`index.md` has exactly these sections, in this order. Nothing else gets a heading. Content past a cap moves to a linked file.
+
+```
+## Task              the ask, 1–3 sentences, close to the user's words
+## Expected outcome  3–5 testable bullets: what "done" means
+## Context           up to 8 bullets of facts needed to understand the task, then links for more
+## Progress          one line "Phase: <phase>. Now: <what's happening>", then a checklist of done / next steps
+## Decisions         dated bullets: `YYYY-MM-DD — <decision> (<who>)`
+## Links             one table: issue, PRs, Slack, task files, worktrees. `| What | Where | State |`
+## Log               one dated line per event, about 150 characters at most. The story goes in ailog.md
+```
+
+- The orchestrator keeps **Progress** and **Log** current at every phase change, and adds a **Decisions** line for every human decision.
+- Don't add ad-hoc sections ("Root cause", "Intended flow"). Write a Context bullet and link the file.
 
 ### index.md frontmatter additions
 
@@ -68,12 +90,13 @@ log: on                # `off` when the user asked to skip the comms log (§10)
 
 ### Phases
 
-`planning` → `gate-1` → `impl-planning` → `ready` → `impl` → `impl-review` → `impl-done` → `gate-3` → `pr-open`
+`planning` → `gate-1` → `impl-planning` → `ready` → `impl` → `impl-review` → `impl-done` → `gate-3` → `pr-open` → `done`
 
 - `gate-*` means the flow is waiting for the human.
+- `done` is set when the PR is merged (or the task is dropped). It triggers the retro and the archive (§8).
 - `impl-planning` starts after gate 1. The planner sets up the branch, then writes `impl-plan.md`, and it goes through the review loop.
 - `ready` means the reviewer has approved `impl-plan.md`. The human may read it, but it's not a required gate.
-- At every transition, the orchestrator updates these fields in `index.md`: `phase`, `updated`, **Now / Next** and **Log**. It also keeps the status in `tasks/README.md` in sync.
+- At every transition, the orchestrator updates these fields in `index.md`: `phase`, `updated`, **Progress** and **Log**. It also keeps the status in `tasks/README.md` in sync.
 - **Small task** = the plan touches ≤3 files and changes no contract, proto, DB schema or public API. The planner declares it in `plan.md` (`size:`), and the reviewer may challenge it. For a small task:
   - plan §2 can be "Not needed"
   - `impl-plan.md` is still written, but it's short, and it gets 1 review round
@@ -185,7 +208,9 @@ If any check fails, **stop without committing** and report the mismatch.
 
 1. Run all the pre-commit checks.
 2. Check that `git log --oneline origin/main..HEAD` shows only this task's commits. If there are unrelated commits, stop and escalate.
-3. If the branch is behind `origin/main`, run `git merge origin/main`, then re-run the repo's checks and fix anything that broke.
+3. If the branch is behind `origin/main`, run `git merge origin/main`, then re-run the repo's checks.
+   - Clean merge and green checks → continue.
+   - A conflict, or a failing check → **stop**. The planner never edits code. The orchestrator spawns `q-coder` (job `fix-findings`, with the conflict or failing output as the finding), then runs one reviewer delta re-check on the merge result, then resumes the push.
 4. Push with `git push -u origin <branch>`.
 
 ### Cleanup
@@ -198,7 +223,7 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
   - yama: `make run-fixes && make run-checks`
   - webapp: `npm run lint:fix && npm run format:fix && npm run ci`
   - hyperion: `uv run ruff format . && uv run ruff check --fix . && uv run mypy`
-- **Runbook:** `~/Documents/z-agent/worker/docs/repos/<alias>.md` holds the verified commands and gotchas per repo. Read it first; add a line when you learn something new.
+- **Runbook:** `~/Documents/z-agent/worker/docs/repos/<alias>.md` holds the verified commands, conventions and gotchas per repo (§8 tiers 2 and 3). Read it first. When a gotcha saves you, update its `verified:` date. When you learn a new one, add a line.
 - **Two speeds:**
   - *While iterating:* targeted checks only: the typecheck, and the tests for the files you touched.
   - *Before each commit:* the full gate. Order: fixes first, then checks, then the relevant tests. Repeat until everything is green. A commit that only fixes minor or nit findings, with no logic change, may use the targeted checks alone.
@@ -206,7 +231,7 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
   - don't weaken a check
   - don't add a suppression
   - don't edit existing `eslint-disable`, `# type: ignore` or `noqa` directives
-- **Pre-existing failures:** note them in `impl-notes.md`, with evidence (for example, the same failure on `origin/main`). Don't fix them.
+- **Pre-existing failures:** note them in the `## Notes` section of `impl-plan.md`, with evidence (for example, the same failure on `origin/main`). Don't fix them.
 
 ## 7. Outward-facing actions
 
@@ -214,11 +239,27 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
 - **PR creation:** only after gate 3 approval.
 - **GitHub comments, replies and thread resolution:** **only when the human explicitly asks**. By default, results are reported in chat.
 
-## 8. Lessons file
+## 8. Lessons and the retro
 
-- **What it is:** `~/Documents/z-agent/worker/docs/review-lessons.md` lists recurring misses that external reviewers still caught.
-- **Who reads it:** the reviewer and the coder, at the start of every run.
-- **Who writes it:** the orchestrator adds a lesson whenever a PR review reveals a pattern the q-flow missed.
+Lessons live in three tiers, by how long they stay true. One line each, in the form "check X when doing Y". No paragraphs.
+
+- **Tier 1, principles.** Cross-repo and permanent. File: `~/Documents/z-agent/worker/docs/review-lessons.md`. This is the reviewer's checklist, so it is capped at **15 lines**. Adding a line means merging or dropping one. Format: `- YYYY-MM-DD · <rule> (<task slug>)`.
+- **Tier 2, repo conventions.** Permanent for that repo. Section `## Conventions` in `docs/repos/<alias>.md`. Once a convention has held for a few tasks, move it into the repo's own `CLAUDE.md` and delete it here, so every tool benefits.
+- **Tier 3, tips and workarounds.** Perishable. Section `## Gotchas` in `docs/repos/<alias>.md`. Every line ends with `verified: YYYY-MM-DD`. Whoever uses a tip re-dates it. The retro deletes any line not re-verified in **90 days**.
+
+**Who reads what:** the reviewer reads tier 1 and the repo's `## Conventions`. The coder reads all three for the repos it touches.
+
+### Retro (at `done`)
+
+When the PR is merged, or the task is dropped, the orchestrator runs the retro before archiving. It answers three questions, each with **one line or "nothing"**:
+
+1. **Missed:** what did the reviewer or coder miss that the human, a later fix, or production caught? Evidence: the human's corrections at gates, hand edits after "done", follow-up commits touching the same files, Sentry or Logfire errors in the changed files. → one tier 1 or tier 2 line.
+2. **Undocumented:** what did the coder have to work out that no runbook had? → one tier 3 line, or a command in the runbook.
+3. **Stale:** which existing lesson or gotcha turned out wrong or outdated? → delete it.
+
+Then it writes the retro result as one **Log** line in `index.md` (`retro: +1 tier1, +1 gotcha, -1 stale` or `retro: nothing`), sets `phase: done`, moves the folder to `tasks-archived/<slug>/`, and moves its README row to **Done / Archived** with the PR link.
+
+Deleting counts as a result. A retro that only adds will grow the files until nobody reads them.
 
 ## 9. Writing style (all roles, all files and chat summaries)
 
@@ -229,11 +270,11 @@ When the task reaches `done`, offer to run `git worktree remove <path>`. Only do
 - **References:** point to code as `repo/path:L123`, and use absolute dates (`YYYY-MM-DD`).
 - **Keep it short.** Research deeply but write briefly. Leave the research trail out of the documents.
 
-## 10. Comms log (default on)
+## 10. AI log (default on)
 
-- **What:** `tasks/<slug>/comms.md` records the messages agents pass to each other, so the human can follow the conversation later. The review files in `review/` stay as they are; they are the working hand-off, and the log points to them.
+- **What:** `tasks/<slug>/ailog.md` records the messages agents pass to each other, so the human can follow the conversation later when something looks off. The review files in `review/` stay as they are; they are the working hand-off, and the log points to them. The index's **Log** stays one line per event; the story goes here.
 - **Default is on.** The user turns it off by saying so explicitly in the request ("no log", "skip the log", "without logging"). The orchestrator then sets `log: off` in `index.md`, so the choice survives a resume, and tells each sub-agent `log: off` in its prompt. A later request can set it back to `on`.
-- **When off:** nobody writes or edits `comms.md`. Everything else works the same.
+- **When off:** nobody writes or edits `ailog.md`. Everything else works the same.
 - **Who writes:** every role appends one entry for each message it sends, using Bash `>>` (append only, never rewrite the file):
   - the orchestrator: the job prompts it gives a sub-agent, and the human feedback it relays
   - `q-planner`, `q-reviewer`, `q-coder`: their final report

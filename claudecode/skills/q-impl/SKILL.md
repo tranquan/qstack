@@ -14,7 +14,7 @@ You are the **orchestrator**. Read `~/.claude/q-workflow/RULES.md` first.
 
 Input: `$ARGUMENTS`
 
-**Comms log (default on).** Read RULES.md §10. If the input says "no log", "skip the log" or "without logging", set `log: off` in `index.md` and tell every sub-agent `log: off`. Otherwise read `log:` from `index.md` (missing = `on`). While it's on, append an entry to `comms.md` for each prompt or feedback message you send to a sub-agent.
+**AI log:** follow RULES.md §10 (`ailog.md`, on unless the input or `index.md` says `log: off`).
 
 ## 0. Preconditions (all must hold)
 
@@ -76,7 +76,7 @@ Set `phase: impl-done`. Update `index.md` and the README row. Report in short bu
 - **Branch** and commits (not pushed).
 - **Checks:** the commands and results.
 - **Review:** the number of rounds, what got fixed, rebuttals, and waived minors.
-- **Deviations from plan:** from `impl-notes.md`.
+- **Deviations from plan:** from the `## Notes` of `impl-plan.md`.
 - **Next:** `/q-plan-impl <slug>` continues to the PR step. Or ask me to draft the PR.
 
 **Don't push or open a PR from q-impl.**
